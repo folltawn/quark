@@ -1,12 +1,25 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    // Базовые токены
     Ident(String),
-    String(String),
+    StringLiteral(String),
+    NumberLiteral(String),
     LParen,
     RParen,
     Semicolon,
+    Equals,
     EOF,
     Illegal(char),
+    
+    // Ключевые слова типов
+    StringType,
+    IntegerType,
+    FloatType,
+    BooleanType,
+    
+    // Булевы литералы
+    True,
+    False,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +73,28 @@ impl Lexer {
         }
     }
 
+    fn skip_comments(&mut self) {
+        while let Some('/') = self.peek() {
+            if let Some('/') = self.input.get(self.position + 1) {
+                // Пропускаем комментарий
+                self.advance(); // /
+                self.advance(); // /
+                
+                while let Some(ch) = self.peek() {
+                    if ch == '\n' {
+                        break;
+                    }
+                    self.advance();
+                }
+                
+                // Пропускаем пробелы после комментария
+                self.skip_whitespace();
+            } else {
+                break;
+            }
+        }
+    }
+
     fn read_ident(&mut self) -> String {
         let mut ident = String::new();
         while let Some(ch) = self.peek() {
@@ -71,6 +106,34 @@ impl Lexer {
             }
         }
         ident
+    }
+
+    fn read_number(&mut self) -> String {
+        let mut number = String::new();
+        let mut has_dot = false;
+        
+        while let Some(ch) = self.peek() {
+            if ch.is_ascii_digit() {
+                number.push(ch);
+                self.advance();
+            } else if ch == '.' && !has_dot {
+                if let Some(next) = self.input.get(self.position + 1) {
+                    if next.is_ascii_digit() {
+                        number.push(ch);
+                        self.advance();
+                        has_dot = true;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        number
     }
 
     fn read_string(&mut self) -> Result<String, LexError> {
@@ -125,29 +188,9 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Result<Token, LexError> {
-        // Пропускаем пробелы
+        // Пропускаем пробелы и комментарии
         self.skip_whitespace();
-        
-        // Проверяем на комментарии
-        while let Some('/') = self.peek() {
-            if let Some('/') = self.input.get(self.position + 1) {
-                // Это комментарий, пропускаем до конца строки
-                self.advance(); // первый /
-                self.advance(); // второй /
-                
-                while let Some(ch) = self.peek() {
-                    if ch == '\n' {
-                        break;
-                    }
-                    self.advance();
-                }
-                
-                // После комментария могут быть пробелы
-                self.skip_whitespace();
-            } else {
-                break;
-            }
-        }
+        self.skip_comments();
 
         match self.peek() {
             Some('(') => {
@@ -162,10 +205,31 @@ impl Lexer {
                 self.advance();
                 Ok(Token::Semicolon)
             }
-            Some('"') => Ok(Token::String(self.read_string()?)),
-            Some(ch) if ch.is_alphabetic() || ch == '_' => {
-                Ok(Token::Ident(self.read_ident()))
+            Some('=') => {
+                self.advance();
+                Ok(Token::Equals)
             }
+            Some('"') => Ok(Token::StringLiteral(self.read_string()?)),
+            
+            // Числа
+            Some(ch) if ch.is_ascii_digit() => {
+                Ok(Token::NumberLiteral(self.read_number()))
+            }
+            
+            // Идентификаторы и ключевые слова
+            Some(ch) if ch.is_alphabetic() || ch == '_' => {
+                let ident = self.read_ident();
+                Ok(match ident.as_str() {
+                    "String" => Token::StringType,
+                    "Integer" => Token::IntegerType,
+                    "Float" => Token::FloatType,
+                    "Boolean" => Token::BooleanType,
+                    "true" => Token::True,
+                    "false" => Token::False,
+                    _ => Token::Ident(ident),
+                })
+            }
+            
             Some(ch) if ch.is_ascii() => {
                 self.advance();
                 Ok(Token::Illegal(ch))

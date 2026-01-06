@@ -4,29 +4,61 @@ use crate::lexer::Token;
 pub enum Expr {
     Call {
         name: String,
-        args: Vec<String>,
+        args: Vec<Expr>,
     },
+    Variable(String),
+    Literal(Value),
+}
+
+#[derive(Debug, Clone)]
+pub enum Value {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+}
+
+#[derive(Debug, Clone)]
+pub enum Stmt {
+    Declaration {
+        var_type: VarType,
+        name: String,
+        value: Value,
+    },
+    Expression(Expr),
+}
+
+#[derive(Debug, Clone)]
+pub enum VarType {
+    String,
+    Integer,
+    Float,
+    Boolean,
 }
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub statements: Vec<Expr>,
+    pub statements: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub message: String,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at line {}:{}", self.message, self.line, self.column)
     }
 }
 
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
+    current_line: usize,
+    current_column: usize,
 }
 
 impl Parser {
@@ -34,6 +66,8 @@ impl Parser {
         Self {
             tokens,
             position: 0,
+            current_line: 1,
+            current_column: 1,
         }
     }
 
@@ -54,36 +88,163 @@ impl Parser {
             }
             Some(token) => Err(ParseError {
                 message: format!("Expected {:?}, got {:?}", expected, token),
+                line: self.current_line,
+                column: self.current_column,
             }),
             None => Err(ParseError {
                 message: format!("Expected {:?}, but no more tokens", expected),
+                line: self.current_line,
+                column: self.current_column,
             }),
         }
+    }
+
+    fn parse_type(&mut self) -> Result<VarType, ParseError> {
+        match self.advance() {
+            Some(Token::StringType) => Ok(VarType::String),
+            Some(Token::IntegerType) => Ok(VarType::Integer),
+            Some(Token::FloatType) => Ok(VarType::Float),
+            Some(Token::BooleanType) => Ok(VarType::Boolean),
+            Some(token) => Err(ParseError {
+                message: format!("Expected type, got {:?}", token),
+                line: self.current_line,
+                column: self.current_column,
+            }),
+            None => Err(ParseError {
+                message: "Expected type".to_string(),
+                line: self.current_line,
+                column: self.current_column,
+            }),
+        }
+    }
+
+    fn parse_value(&mut self) -> Result<Value, ParseError> {
+        match self.advance() {
+            Some(Token::StringLiteral(s)) => Ok(Value::String(s.clone())),
+            Some(Token::NumberLiteral(num)) => {
+                if num.contains('.') {
+                    match num.parse::<f64>() {
+                        Ok(f) => Ok(Value::Float(f)),
+                        Err(_) => Err(ParseError {
+                            message: format!("Invalid float literal: {}", num),
+                            line: self.current_line,
+                            column: self.current_column,
+                        }),
+                    }
+                } else {
+                    match num.parse::<i64>() {
+                        Ok(i) => Ok(Value::Integer(i)),
+                        Err(_) => Err(ParseError {
+                            message: format!("Invalid integer literal: {}", num),
+                            line: self.current_line,
+                            column: self.current_column,
+                        }),
+                    }
+                }
+            }
+            Some(Token::True) => Ok(Value::Boolean(true)),
+            Some(Token::False) => Ok(Value::Boolean(false)),
+            Some(token) => Err(ParseError {
+                message: format!("Expected value, got {:?}", token),
+                line: self.current_line,
+                column: self.current_column,
+            }),
+            None => Err(ParseError {
+                message: "Expected value".to_string(),
+                line: self.current_line,
+                column: self.current_column,
+            }),
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<Expr, ParseError> {
+        match self.peek() {
+            Some(Token::StringLiteral(_)) | Some(Token::NumberLiteral(_)) | 
+            Some(Token::True) | Some(Token::False) => {
+                let value = self.parse_value()?;
+                Ok(Expr::Literal(value))
+            }
+            Some(Token::Ident(_)) => {
+                let name = match self.advance() {
+                    Some(Token::Ident(name)) => name.clone(),
+                    _ => unreachable!(),
+                };
+                Ok(Expr::Variable(name))
+            }
+            _ => Err(ParseError {
+                message: "Expected expression".to_string(),
+                line: self.current_line,
+                column: self.current_column,
+            }),
+        }
+    }
+
+    fn parse_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let var_type = self.parse_type()?;
+        
+        let name = match self.advance() {
+            Some(Token::Ident(name)) => name.clone(),
+            Some(token) => {
+                return Err(ParseError {
+                    message: format!("Expected variable name, got {:?}", token),
+                    line: self.current_line,
+                    column: self.current_column,
+                })
+            }
+            None => {
+                return Err(ParseError {
+                    message: "Expected variable name".to_string(),
+                    line: self.current_line,
+                    column: self.current_column,
+                })
+            }
+        };
+        
+        self.expect(Token::Equals)?;
+        
+        let value = self.parse_value()?;
+        
+        match (&var_type, &value) {
+            (VarType::String, Value::String(_)) => {}
+            (VarType::Integer, Value::Integer(_)) => {}
+            (VarType::Float, Value::Float(_)) => {}
+            (VarType::Boolean, Value::Boolean(_)) => {}
+            _ => {
+                return Err(ParseError {
+                    message: format!("Type mismatch: cannot assign {:?} to {:?}", value, var_type),
+                    line: self.current_line,
+                    column: self.current_column,
+                })
+            }
+        }
+        
+        self.expect(Token::Semicolon)?;
+        
+        Ok(Stmt::Declaration {
+            var_type,
+            name,
+            value,
+        })
     }
 
     fn parse_call(&mut self, name: String) -> Result<Expr, ParseError> {
         self.expect(Token::LParen)?;
         
-        let arg = match self.advance() {
-            Some(Token::String(s)) => s.clone(),
-            Some(token) => {
-                return Err(ParseError {
-                    message: format!("Expected string, got {:?}", token),
-                })
-            }
-            None => {
-                return Err(ParseError {
-                    message: "Expected argument".to_string(),
-                })
-            }
-        };
+        let mut args = Vec::new();
+        
+        // Парсим первый аргумент
+        if let Some(Token::RParen) = self.peek() {
+            // Нет аргументов
+        } else {
+            args.push(self.parse_expression()?);
+        }
         
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         
         Ok(Expr::Call {
             name,
-            args: vec![arg],
+            args,
         })
     }
 
@@ -92,28 +253,39 @@ impl Parser {
         
         while let Some(token) = self.peek() {
             match token {
+                Token::StringType | Token::IntegerType | Token::FloatType | Token::BooleanType => {
+                    statements.push(self.parse_declaration()?);
+                }
+                
                 Token::Ident(name) => {
                     let name = name.clone();
                     self.advance();
                     
                     if name == "echo" {
-                        statements.push(self.parse_call(name)?);
+                        statements.push(Stmt::Expression(self.parse_call(name)?));
                     } else {
                         return Err(ParseError {
-                            message: format!("Unknown function: {}", name),
+                            message: format!("Unknown function or variable: {}", name),
+                            line: self.current_line,
+                            column: self.current_column,
                         });
                     }
                 }
+                
                 Token::EOF => break,
                 Token::Illegal(ch) => {
                     return Err(ParseError {
                         message: format!("Invalid character: '{}'", ch),
+                        line: self.current_line,
+                        column: self.current_column,
                     });
                 }
                 _ => {
                     let token = self.advance().unwrap();
                     return Err(ParseError {
                         message: format!("Unexpected token: {:?}", token),
+                        line: self.current_line,
+                        column: self.current_column,
                     });
                 }
             }
