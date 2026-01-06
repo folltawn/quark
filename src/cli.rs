@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const VERSION: &str = "1.0.2-alpha.1";
+const VERSION: &str = "1.0.3-alpha.1";
 
 fn show_help() {
     println!("Quark Compiler v{}", VERSION);
@@ -79,7 +79,7 @@ fn compile_file(
         PathBuf::from(format!("{}{}", stem, ext))
     };
     
-    let compiler = compiler::Compiler;
+    let mut compiler = compiler::Compiler::new();
     compiler.compile_to_exe(&program, output_path.to_str().unwrap())
         .map_err(|e| format!("Compilation error: {:?}", e))?;
     

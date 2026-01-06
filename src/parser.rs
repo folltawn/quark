@@ -8,6 +8,16 @@ pub enum Expr {
     },
     Variable(String),
     Literal(Value),
+    BinaryOp {
+        left: Box<Expr>,
+        op: BinOp,
+        right: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum BinOp {
+    Add,
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +167,7 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, ParseError> {
+    fn parse_primary_expression(&mut self) -> Result<Expr, ParseError> {
         match self.peek() {
             Some(Token::StringLiteral(_)) | Some(Token::NumberLiteral(_)) | 
             Some(Token::True) | Some(Token::False) => {
@@ -171,12 +181,35 @@ impl Parser {
                 };
                 Ok(Expr::Variable(name))
             }
+            Some(Token::LParen) => {
+                self.advance(); // пропускаем (
+                let expr = self.parse_expression()?;
+                self.expect(Token::RParen)?;
+                Ok(expr)
+            }
             _ => Err(ParseError {
                 message: "Expected expression".to_string(),
                 line: self.current_line,
                 column: self.current_column,
             }),
         }
+    }
+
+    fn parse_expression(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_primary_expression()?;
+        
+        while let Some(Token::Plus) = self.peek() {
+            self.advance(); // пропускаем +
+            let right = self.parse_primary_expression()?;
+            
+            left = Expr::BinaryOp {
+                left: Box::new(left),
+                op: BinOp::Add,
+                right: Box::new(right),
+            };
+        }
+        
+        Ok(left)
     }
 
     fn parse_declaration(&mut self) -> Result<Stmt, ParseError> {
@@ -232,7 +265,6 @@ impl Parser {
         
         let mut args = Vec::new();
         
-        // Парсим первый аргумент
         if let Some(Token::RParen) = self.peek() {
             // Нет аргументов
         } else {

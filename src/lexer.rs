@@ -8,6 +8,7 @@ pub enum Token {
     RParen,
     Semicolon,
     Equals,
+    Plus,
     EOF,
     Illegal(char),
     
@@ -208,6 +209,10 @@ impl Lexer {
             Some('=') => {
                 self.advance();
                 Ok(Token::Equals)
+            }
+            Some('+') => {
+                self.advance();
+                Ok(Token::Plus)
             }
             Some('"') => Ok(Token::StringLiteral(self.read_string()?)),
             
