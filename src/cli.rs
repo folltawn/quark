@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const VERSION: &str = "1.0.0-alpha.1";
+const VERSION: &str = "1.0.1-alpha.1";
 
 fn show_help() {
     println!("Quark Compiler v{}", VERSION);

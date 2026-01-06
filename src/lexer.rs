@@ -18,6 +18,8 @@ pub struct LexError {
 pub struct Lexer {
     input: Vec<char>,
     position: usize,
+    line: usize,
+    column: usize,
 }
 
 impl Lexer {
@@ -25,6 +27,8 @@ impl Lexer {
         Self {
             input: input.chars().collect(),
             position: 0,
+            line: 1,
+            column: 1,
         }
     }
 
@@ -34,7 +38,13 @@ impl Lexer {
 
     fn advance(&mut self) -> Option<char> {
         let ch = self.peek();
-        if ch.is_some() {
+        if let Some(c) = ch {
+            if c == '\n' {
+                self.line += 1;
+                self.column = 1;
+            } else {
+                self.column += 1;
+            }
             self.position += 1;
         }
         ch
@@ -115,7 +125,29 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Result<Token, LexError> {
+        // Пропускаем пробелы
         self.skip_whitespace();
+        
+        // Проверяем на комментарии
+        while let Some('/') = self.peek() {
+            if let Some('/') = self.input.get(self.position + 1) {
+                // Это комментарий, пропускаем до конца строки
+                self.advance(); // первый /
+                self.advance(); // второй /
+                
+                while let Some(ch) = self.peek() {
+                    if ch == '\n' {
+                        break;
+                    }
+                    self.advance();
+                }
+                
+                // После комментария могут быть пробелы
+                self.skip_whitespace();
+            } else {
+                break;
+            }
+        }
 
         match self.peek() {
             Some('(') => {
