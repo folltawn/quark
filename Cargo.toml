@@ -1,0 +1,12 @@
+[package]
+name = "quark"
+version = "1.0.0-alpha.1"
+edition = "2021"
+description = "Компилируемый низкоуровневый язык программирования Quark"
+authors = ["Folltawn <folltawn@gmail.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/folltawn/quark"
+
+[[bin]]
+name = "quark"
+path = "src/main.rs"
